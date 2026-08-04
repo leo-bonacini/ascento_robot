@@ -39,6 +39,29 @@ ok()   { echo -e "${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 fail() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+# 0. Check required commands are installed
+declare -A REQUIRED_PKG=(
+    [nmcli]="network-manager"
+    [ping]="iputils-ping"
+    [ssh]="openssh-client"
+    [ssh-keygen]="openssh-client"
+    [ssh-copy-id]="openssh-client"
+)
+missing_cmds=()
+for cmd in "${!REQUIRED_PKG[@]}"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing_cmds+=("$cmd")
+done
+if [ ${#missing_cmds[@]} -gt 0 ]; then
+    fail "Missing required command(s): ${missing_cmds[*]}"
+    missing_pkgs=()
+    for cmd in "${missing_cmds[@]}"; do
+        missing_pkgs+=("${REQUIRED_PKG[$cmd]}")
+    done
+    echo "Install with:"
+    echo "    sudo apt install -y $(printf "%s\n" "${missing_pkgs[@]}" | sort -u | tr '\n' ' ')"
+    exit 1
+fi
+
 echo -e "${BLUE}=====================================${NC}"
 echo -e "${CYAN}   ASCENTO Connection Manager${NC}"
 echo -e "${BLUE}=====================================${NC}"
