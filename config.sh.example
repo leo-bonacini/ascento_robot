@@ -1,0 +1,11 @@
+# ASCENTO robot connection settings.
+#
+# Copy this file to config.sh and fill in your values:
+#     cp config.sh.example config.sh
+#
+# config.sh is git-ignored, so your real values never get committed.
+
+SSID="Ascento-0110_5G"
+WIFI_PASSWORD="changeme"
+ROBOT_IP="10.42.0.50"
+ROBOT_USER="administrator"
