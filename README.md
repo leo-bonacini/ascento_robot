@@ -35,7 +35,6 @@ The first time you run it, it also:
 
 ## Files
 
-- `connect_ascento.sh` · does everything above. This replaces the old `set_ascento.sh` (SSH alias setup) and `access_ascento.sh` (Wi-Fi + connect) scripts, which have been removed.
 - `config.sh.example` · template for robot settings, safe to commit.
 - `config.sh` · your real robot settings, git-ignored, created by you from the template.
 
