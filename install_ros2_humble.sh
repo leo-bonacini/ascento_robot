@@ -1,48 +1,53 @@
 #!/bin/bash
+#
+# install_ros2_humble.sh
+# Installs ROS 2 Humble on Ubuntu 22.04 via APT. On other Ubuntu versions
+# it explains why it won't install automatically and what to do instead.
+#
 
 set -e
 
-# ============================================================
-# ROS 2 HUMBLE - MULTI-VERSION UBUNTU INSTALLER
-#
-# Ubuntu 22.04 -> official install via APT
-# Ubuntu 20.04 -> not installed automatically (source)
-# Ubuntu 24.04 -> Humble not officially supported
-# ============================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=utils.sh
+source "$SCRIPT_DIR/utils.sh"
 
 ROS_DISTRO="humble"
 
-echo ""
-echo "===================================================="
-echo "          ROS 2 HUMBLE INSTALLER"
-echo "===================================================="
-echo ""
+# ============================================================
+# Header
+# ============================================================
 
-# ------------------------------------------------------------
-# Check we're not running as root
-# ------------------------------------------------------------
+echo -e "${BLUE}=====================================${NC}"
+echo -e "${CYAN}       ROS 2 Humble Installer${NC}"
+echo -e "${BLUE}=====================================${NC}"
+echo
+
+# ============================================================
+# 0. Check we're not running as root
+# ============================================================
 
 if [ "$EUID" -eq 0 ]; then
-    echo "ERROR: do not run this script as root."
-    echo ""
+    fail "Do not run this script as root."
+    echo
     echo "Use:"
     echo "  ./install_ros2_humble.sh"
     exit 1
 fi
 
-# ------------------------------------------------------------
-# Check Ubuntu
-# ------------------------------------------------------------
+# ============================================================
+# 1. Check Ubuntu
+# ============================================================
 
 if [ ! -f /etc/os-release ]; then
-    echo "ERROR: could not identify the operating system."
+    fail "Could not identify the operating system."
     exit 1
 fi
 
 source /etc/os-release
 
 if [ "$ID" != "ubuntu" ]; then
-    echo "ERROR: this installer targets Ubuntu."
+    fail "This installer targets Ubuntu."
     echo "Detected system: $PRETTY_NAME"
     exit 1
 fi
@@ -50,34 +55,33 @@ fi
 UBUNTU_VERSION="$VERSION_ID"
 UBUNTU_CODENAME="$UBUNTU_CODENAME"
 
-echo "Detected system:"
-echo "  $PRETTY_NAME"
-echo ""
+info "Detected system: ${CYAN}${PRETTY_NAME}${NC}"
 
-# ------------------------------------------------------------
-# Ubuntu 22.04
-# ------------------------------------------------------------
+# ============================================================
+# 2. Ubuntu 22.04
+# ============================================================
 
 if [ "$UBUNTU_VERSION" == "22.04" ]; then
 
-    echo "Ubuntu 22.04 detected."
-    echo "ROS 2 Humble will be installed via APT."
-    echo ""
+    echo
+    ok "Ubuntu 22.04 detected."
+    info "ROS 2 Humble will be installed via APT."
+    echo
 
-    read -p "Do you want to continue? [y/N]: " CONFIRM
+    read -r -p "Do you want to continue? [y/N]: " CONFIRM
 
     if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
-        echo "Installation cancelled."
+        info "Installation cancelled."
         exit 0
     fi
 
-    echo ""
-    echo "[1/9] Updating Ubuntu..."
+    echo
+    info "[1/9] Updating Ubuntu..."
     sudo apt update
     sudo apt upgrade -y
 
-    echo ""
-    echo "[2/9] Installing dependencies..."
+    echo
+    info "[2/9] Installing dependencies..."
     sudo apt install -y \
         locales \
         software-properties-common \
@@ -86,39 +90,39 @@ if [ "$UBUNTU_VERSION" == "22.04" ]; then
         lsb-release \
         ca-certificates
 
-    echo ""
-    echo "[3/9] Configuring locale..."
+    echo
+    info "[3/9] Configuring locale..."
 
     sudo locale-gen en_US en_US.UTF-8
     sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
     export LANG=en_US.UTF-8
 
-    echo ""
-    echo "[4/9] Adding the ROS key..."
+    echo
+    info "[4/9] Adding the ROS key..."
 
     sudo curl -sSL \
         https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
         -o /usr/share/keyrings/ros-archive-keyring.gpg
 
-    echo ""
-    echo "[5/9] Adding the ROS 2 repository..."
+    echo
+    info "[5/9] Adding the ROS 2 repository..."
 
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main" | \
         sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
-    echo ""
-    echo "[6/9] Updating repositories..."
+    echo
+    info "[6/9] Updating repositories..."
 
     sudo apt update
 
-    echo ""
-    echo "[7/9] Installing ROS 2 Humble Desktop..."
+    echo
+    info "[7/9] Installing ROS 2 Humble Desktop..."
 
     sudo apt install -y ros-humble-desktop
 
-    echo ""
-    echo "[8/9] Installing tools..."
+    echo
+    info "[8/9] Installing tools..."
 
     sudo apt install -y \
         python3-colcon-common-extensions \
@@ -128,8 +132,8 @@ if [ "$UBUNTU_VERSION" == "22.04" ]; then
         git \
         python3-pip
 
-    echo ""
-    echo "[9/9] Configuring ROS 2..."
+    echo
+    info "[9/9] Configuring ROS 2..."
 
     # Initialize rosdep
     sudo rosdep init 2>/dev/null || true
@@ -145,105 +149,101 @@ if [ "$UBUNTU_VERSION" == "22.04" ]; then
     # Load ROS in this session
     source /opt/ros/humble/setup.bash
 
-    echo ""
-    echo "===================================================="
-    echo "       ROS 2 HUMBLE INSTALLED SUCCESSFULLY"
-    echo "===================================================="
-    echo ""
+    echo
+    echo -e "${BLUE}=====================================${NC}"
+    echo -e "${GREEN}   ROS 2 Humble installed successfully${NC}"
+    echo -e "${BLUE}=====================================${NC}"
+    echo
 
-    echo "ROS 2:"
+    info "ROS 2:"
     ros2 --help | head -n 3
 
-    echo ""
-    echo "Recommended test:"
-    echo ""
+    echo
+    info "Recommended test:"
+    echo
     echo "Terminal 1:"
     echo "  ros2 run demo_nodes_cpp talker"
-    echo ""
+    echo
     echo "Terminal 2:"
     echo "  ros2 run demo_nodes_py listener"
-    echo ""
+    echo
 
-    echo "Open a new terminal to load ROS 2 automatically."
-    echo ""
+    info "Open a new terminal to load ROS 2 automatically."
 
     exit 0
 fi
 
-# ------------------------------------------------------------
-# Ubuntu 20.04
-# ------------------------------------------------------------
+# ============================================================
+# 3. Ubuntu 20.04
+# ============================================================
 
 if [ "$UBUNTU_VERSION" == "20.04" ]; then
 
-    echo "===================================================="
-    echo "              UBUNTU 20.04 DETECTED"
-    echo "===================================================="
-    echo ""
+    echo
+    warn "Ubuntu 20.04 detected."
+    echo
     echo "ROS 2 Humble has Tier 3 support for Ubuntu 20.04."
-    echo ""
+    echo
     echo "The recommended install is not through the standard"
     echo "APT package. For Ubuntu 20.04, Humble must be built"
     echo "from source."
-    echo ""
-    echo "This script will NOT change your APT repositories"
-    echo "to avoid breaking the system."
-    echo ""
+    echo
+    warn "This script will NOT change your APT repositories"
+    warn "to avoid breaking the system."
+    echo
     echo "If you specifically need Humble:"
-    echo ""
+    echo
     echo "  -> we can install it from SOURCE"
-    echo ""
+    echo
     echo "If you want a simple APT install:"
-    echo ""
+    echo
     echo "  -> Ubuntu 22.04 + ROS 2 Humble"
-    echo ""
+    echo
 
     exit 0
 fi
 
-# ------------------------------------------------------------
-# Ubuntu 24.04
-# ------------------------------------------------------------
+# ============================================================
+# 4. Ubuntu 24.04
+# ============================================================
 
 if [ "$UBUNTU_VERSION" == "24.04" ]; then
 
-    echo "===================================================="
-    echo "              UBUNTU 24.04 DETECTED"
-    echo "===================================================="
-    echo ""
+    echo
+    warn "Ubuntu 24.04 detected."
+    echo
     echo "ROS 2 Humble has no official support for Ubuntu 24.04."
-    echo ""
+    echo
     echo "For Ubuntu 24.04, the recommended option is:"
-    echo ""
+    echo
     echo "  ROS 2 Jazzy"
-    echo ""
-    echo "Humble will not be installed on this system."
-    echo ""
+    echo
+    warn "Humble will not be installed on this system."
+    echo
     echo "If you ABSOLUTELY need Humble, it's recommended"
     echo "to use:"
-    echo ""
+    echo
     echo "  Ubuntu 22.04 + ROS 2 Humble"
-    echo ""
+    echo
 
     exit 0
 fi
 
-# ------------------------------------------------------------
-# Other versions
-# ------------------------------------------------------------
+# ============================================================
+# 5. Other versions
+# ============================================================
 
-echo "===================================================="
-echo "             UNSUPPORTED VERSION"
-echo "===================================================="
-echo ""
+echo
+fail "Unsupported version."
+echo
 echo "Detected Ubuntu: $UBUNTU_VERSION"
-echo ""
+echo
 echo "This script has no automated ROS 2 Humble install"
 echo "for this version."
-echo ""
+echo
 echo "For Humble, we recommend:"
-echo ""
+echo
 echo "  Ubuntu 22.04"
-echo ""
+echo
 echo "Installation via APT."
-echo ""
+echo
