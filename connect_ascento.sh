@@ -4,42 +4,51 @@
 # Connects to the ASCENTO robot's Wi-Fi and opens an SSH session.
 #
 # First run: generates a dedicated SSH key, registers a "ascento" host in
-# ~/.ssh/config, and copies the key to the robot (you'll be asked for the
-# robot's SSH password once).
-# Later runs: just connects Wi-Fi + SSH, no password needed.
+# ~/.ssh/config, and copies the key to the robot.
+# Later runs: connects Wi-Fi only if necessary + SSH, no password needed.
+#
 
-# Colors
-GREEN="\033[0;32m"
-RED="\033[0;31m"
-YELLOW="\033[1;33m"
-BLUE="\033[0;34m"
-CYAN="\033[0;36m"
-NC="\033[0m"
+# ============================================================
+# Configuration
+# ============================================================
 
-# Config
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=utils.sh
+source "$SCRIPT_DIR/utils.sh"
+
 CONFIG_FILE="$SCRIPT_DIR/config.sh"
 
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo -e "\033[0;31m[ERROR]\033[0m Missing config.sh."
+    fail "Missing config.sh."
+    echo
     echo "Copy config.sh.example to config.sh and fill in your robot's values:"
+    echo
     echo "    cp config.sh.example config.sh"
+    echo
     exit 1
 fi
 
-# shellcheck source=config.sh.example
+# shellcheck source=config.sh
 source "$CONFIG_FILE"
 
 SSH_ALIAS="ascento"
 SSH_KEY="$HOME/.ssh/id_ascento"
 SSH_CONFIG="$HOME/.ssh/config"
 
-info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-ok()   { echo -e "${GREEN}[OK]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
-fail() { echo -e "${RED}[ERROR]${NC} $1"; }
+# ============================================================
+# Header
+# ============================================================
 
-# 0. Check required commands are installed
+echo -e "${BLUE}=====================================${NC}"
+echo -e "${CYAN}       ASCENTO Connection Manager${NC}"
+echo -e "${BLUE}=====================================${NC}"
+echo
+
+# ============================================================
+# 0. Check required commands
+# ============================================================
+
 declare -A REQUIRED_PKG=(
     [nmcli]="network-manager"
     [ping]="iputils-ping"
@@ -47,74 +56,171 @@ declare -A REQUIRED_PKG=(
     [ssh-keygen]="openssh-client"
     [ssh-copy-id]="openssh-client"
 )
+
 missing_cmds=()
+
 for cmd in "${!REQUIRED_PKG[@]}"; do
-    command -v "$cmd" >/dev/null 2>&1 || missing_cmds+=("$cmd")
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        missing_cmds+=("$cmd")
+    fi
 done
+
 if [ ${#missing_cmds[@]} -gt 0 ]; then
+
     fail "Missing required command(s): ${missing_cmds[*]}"
+
     missing_pkgs=()
+
     for cmd in "${missing_cmds[@]}"; do
         missing_pkgs+=("${REQUIRED_PKG[$cmd]}")
     done
+
+    echo
     echo "Install with:"
+    echo
     echo "    sudo apt install -y $(printf "%s\n" "${missing_pkgs[@]}" | sort -u | tr '\n' ' ')"
+    echo
+
     exit 1
 fi
 
-echo -e "${BLUE}=====================================${NC}"
-echo -e "${CYAN}   ASCENTO Connection Manager${NC}"
-echo -e "${BLUE}=====================================${NC}"
+# ============================================================
+# 1. Check Wi-Fi connection
+# ============================================================
+
 echo
+info "Checking Wi-Fi connection..."
 
-# 1. Connect Wi-Fi
-info "Connecting to network ${CYAN}${SSID}${NC}..."
-if nmcli dev wifi connect "$SSID" password "$WIFI_PASSWORD" >/dev/null 2>&1; then
-    ok "Wi-Fi connected."
+CURRENT_SSID=$(
+    nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null \
+    | awk -F: '$1 == "yes" {print $2; exit}'
+)
+
+if [ "$CURRENT_SSID" = "$SSID" ]; then
+
+    ok "Already connected to Wi-Fi: ${CYAN}${SSID}${NC}"
+
 else
-    fail "Could not connect to Wi-Fi."
-    exit 1
+
+    if [ -n "$CURRENT_SSID" ]; then
+        warn "Currently connected to: ${CURRENT_SSID}"
+    else
+        info "No Wi-Fi network currently connected."
+    fi
+
+    info "Connecting to network ${CYAN}${SSID}${NC}..."
+
+    if nmcli dev wifi connect "$SSID" password "$WIFI_PASSWORD" >/dev/null 2>&1; then
+        ok "Wi-Fi connected."
+    else
+        fail "Could not connect to Wi-Fi."
+        exit 1
+    fi
+
+    sleep 3
+
 fi
 
-sleep 3
+# ============================================================
+# 2. Show current Wi-Fi information
+# ============================================================
 
-# 2. Check internet (informational only, robot network is often offline-only)
+echo
+info "Wi-Fi status:"
+
+nmcli -t -f DEVICE,TYPE,STATE,CONNECTION dev 2>/dev/null \
+    | grep ':wifi:' \
+    | while IFS=: read -r DEVICE TYPE STATE CONNECTION; do
+        echo "    Interface : $DEVICE"
+        echo "    State     : $STATE"
+        echo "    Network   : $CONNECTION"
+    done
+
+# ============================================================
+# 3. Check internet
+# ============================================================
+
 echo
 info "Checking internet..."
+
 if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
     ok "Internet available."
 else
     warn "No internet."
-    warn "The ASCENTO network only works locally."
+    warn "The ASCENTO network may only provide local connectivity."
 fi
 
-# 3. Check robot reachability
+# ============================================================
+# 4. Check robot reachability
+# ============================================================
+
 echo
 info "Checking ASCENTO (${CYAN}${ROBOT_IP}${NC})..."
+
 if ping -c 1 -W 2 "$ROBOT_IP" >/dev/null 2>&1; then
-    ok "ASCENTO found."
+    ok "ASCENTO found at ${ROBOT_IP}."
 else
-    fail "ASCENTO not found."
+    fail "ASCENTO not found at ${ROBOT_IP}."
+    echo
     warn "Check the Wi-Fi connection."
+    warn "Current SSID: ${CURRENT_SSID:-unknown}"
+    echo
     exit 1
 fi
 
-# 4. Ensure a dedicated SSH key exists
+# ============================================================
+# 5. Ensure SSH directory exists
+# ============================================================
+
 echo
-if [ ! -f "$SSH_KEY" ]; then
-    info "Generating dedicated SSH key (${SSH_KEY})..."
-    ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" -q -C "ascento-robot"
-    ok "SSH key generated."
+
+if [ ! -d "$HOME/.ssh" ]; then
+    info "Creating ~/.ssh directory..."
+    mkdir -p "$HOME/.ssh"
 fi
 
-# 5. Ensure ~/.ssh/config has a Host entry for the robot
-mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
+
+# ============================================================
+# 6. Ensure dedicated SSH key exists
+# ============================================================
+
+if [ ! -f "$SSH_KEY" ]; then
+
+    info "Generating dedicated SSH key:"
+    echo "    $SSH_KEY"
+
+    ssh-keygen \
+        -t ed25519 \
+        -f "$SSH_KEY" \
+        -N "" \
+        -q \
+        -C "ascento-robot"
+
+    if [ $? -eq 0 ]; then
+        ok "SSH key generated."
+    else
+        fail "Could not generate SSH key."
+        exit 1
+    fi
+
+else
+
+    ok "SSH key already exists."
+
+fi
+
+# ============================================================
+# 7. Configure ~/.ssh/config
+# ============================================================
+
 touch "$SSH_CONFIG"
 chmod 600 "$SSH_CONFIG"
 
-if ! grep -q "^Host ${SSH_ALIAS}$" "$SSH_CONFIG" 2>/dev/null; then
+if ! grep -qE "^Host[[:space:]]+${SSH_ALIAS}$" "$SSH_CONFIG" 2>/dev/null; then
+
     info "Adding '${SSH_ALIAS}' entry to ~/.ssh/config..."
+
     cat <<EOF >> "$SSH_CONFIG"
 
 Host ${SSH_ALIAS}
@@ -126,26 +232,65 @@ Host ${SSH_ALIAS}
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
 EOF
-    ok "Entry added."
+
+    ok "SSH configuration added."
+
+else
+
+    ok "SSH configuration for '${SSH_ALIAS}' already exists."
+
 fi
 
-# 6. Make sure the key is authorized on the robot (copy it if not)
+# ============================================================
+# 8. Check passwordless SSH access
+# ============================================================
+
 echo
-info "Checking passwordless access..."
-if ssh -o BatchMode=yes -o ConnectTimeout=3 "$SSH_ALIAS" true 2>/dev/null; then
-    ok "Key already authorized."
+info "Checking passwordless SSH access..."
+
+if ssh \
+    -o BatchMode=yes \
+    -o ConnectTimeout=3 \
+    "$SSH_ALIAS" true >/dev/null 2>&1; then
+
+    ok "SSH key already authorized."
+
 else
-    warn "Key not authorized yet."
-    warn "Enter the ASCENTO password when prompted (only needed this once)."
-    if ! ssh-copy-id -i "${SSH_KEY}.pub" "$SSH_ALIAS"; then
+
+    warn "SSH key is not authorized on ASCENTO."
+    echo
+    warn "You will be asked for the ASCENTO SSH password."
+    warn "This should only be necessary once."
+    echo
+
+    if ssh-copy-id \
+        -i "${SSH_KEY}.pub" \
+        "$SSH_ALIAS"; then
+
+        ok "SSH key authorized successfully."
+
+    else
+
         fail "Could not copy the SSH key."
         exit 1
+
     fi
-    ok "Key authorized successfully."
+
 fi
 
-# 7. Connect
+# ============================================================
+# 9. Final SSH connection
+# ============================================================
+
 echo
-info "Connecting to ASCENTO..."
+echo -e "${BLUE}=====================================${NC}"
+echo -e "${GREEN}       Connecting to ASCENTO${NC}"
+echo -e "${BLUE}=====================================${NC}"
 echo
+
+info "Robot IP   : ${ROBOT_IP}"
+info "Robot user : ${ROBOT_USER}"
+info "SSH alias  : ${SSH_ALIAS}"
+echo
+
 exec ssh "$SSH_ALIAS"

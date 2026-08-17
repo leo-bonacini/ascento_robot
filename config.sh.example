@@ -9,3 +9,8 @@ SSID="Ascento-0110_5G"
 WIFI_PASSWORD="changeme"
 ROBOT_IP="10.42.0.50"
 ROBOT_USER="administrator"
+
+# Optional, used by run_zenoh.sh. Defaults shown below — only set these
+# if your zenoh router runs somewhere else.
+# ZENOH_ROUTER_IP="10.42.0.100"
+# ZENOH_ROUTER_PORT="7447"
