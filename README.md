@@ -48,6 +48,7 @@ Run `./run_zenoh.sh --background` to run it in the background (logs to `/tmp/asc
 ## Files
 
 - `connect_ascento.sh` · connects Wi-Fi + SSH to the robot.
+- `install_ros2_humble.sh` · installs ROS 2 Humble (Ubuntu 22.04 via APT; other versions get guidance instead).
 - `run_zenoh.sh` · installs (if needed) and runs the zenoh-ROS2 bridge.
 - `utils.sh` · shared colors/logging helpers (`info`/`ok`/`warn`/`fail`) sourced by the other scripts.
 - `config.sh.example` · template for robot settings, safe to commit.
